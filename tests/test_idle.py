@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 from openspline_server.config import Settings
 from openspline_server.media import AudioTrack, Segment, Timeline, VideoTrack
-from openspline_server.session import Session
+from openspline_server.session import IDLE_NOISE_AMPLITUDE, Session
 from openspline_server.socket_playback import SocketPlayback
 from PIL import Image
 
@@ -52,7 +52,11 @@ async def test_idle_generates_bounded_motion_without_changing_speech_playback(tm
         await until(lambda: s.timeline.idle_next is not None)
         await asyncio.sleep(0.12)
         assert len(worker.calls) == 2  # No viewer consumption: stop generating ahead.
-        assert not np.any(worker.calls[-1][1][0])
+        conditioning = worker.calls[-1][1][0]
+        assert conditioning.dtype == np.float32
+        assert np.all(conditioning[: -worker.info["chunk_samples"]] == 0)
+        assert 0 < np.max(np.abs(conditioning)) <= IDLE_NOISE_AMPLITUDE
+        assert np.min(conditioning) < 0 < np.max(conditioning)
         audio, video = AudioTrack(s.timeline), VideoTrack(s.timeline)
         await audio.recv()
         picture = await video.recv()
@@ -107,7 +111,7 @@ async def test_speech_is_next_after_an_inflight_idle_block(tmp_path):
         worker.hold.set()
         target, _ = await end
         assert target == 480
-        assert np.any(worker.calls[2][1][0])  # The next inference contains speech.
+        assert np.max(worker.calls[2][1][0]) > 0.01  # The next inference contains speech.
         assert np.all(s.timeline.queue[0].video == 3)
     finally:
         await s.close()
@@ -155,43 +159,85 @@ async def test_socket_idle_is_paced_acknowledged_and_independent_of_audio():
             await task
 
 
-async def test_idle_keeps_displaying_motion_while_inference_is_late():
-    # A delayed GPU result must not stop idle video output or compound
-    # transforms on the previous rendered frame.
-    gradient = np.arange(512, dtype=np.uint8)[None, :, None]
-    portrait = np.broadcast_to(gradient, (512, 512, 3)).copy()
-    timeline = Timeline(portrait)
-    pictures = []
-    for _ in range(75):
+async def test_idle_plays_generated_frames_in_order_without_image_transforms():
+    timeline = Timeline(np.zeros((8, 8, 3), dtype=np.uint8))
+    frames = np.arange(6 * 8 * 8 * 3, dtype=np.uint8).reshape(6, 8, 8, 3)
+    timeline.put_idle(frames[:2], 25, 0)
+    assert timeline.advance_idle(1920)
+    np.testing.assert_array_equal(timeline.frame, frames[0])
+    timeline.put_idle(frames[2:], 25, 0)
+    for frame in frames[1:]:
         assert timeline.advance_idle(1920)
-        pictures.append(timeline.frame.copy())
-    assert np.array_equal(timeline.idle_source, portrait)
-    assert not np.array_equal(pictures[0], pictures[-1])
-    assert not np.array_equal(pictures[25], pictures[50])
+        np.testing.assert_array_equal(timeline.frame, frame)
+
+    # A slow GPU holds the last generated pose without replaying the clip,
+    # animating a still image, or jumping back to the portrait.
+    for _ in range(75):
+        assert not timeline.advance_idle(1920)
+        np.testing.assert_array_equal(timeline.frame, frames[-1])
+    timeline.clear(1)
+    np.testing.assert_array_equal(timeline.frame, frames[-1])
+    timeline.put_idle(frames[:2], 25, 0)  # Stale generation cannot resume playback.
+    assert not timeline.advance_idle(1920)
+    timeline.put_idle(frames[:2], 25, 1)
+    assert timeline.advance_idle(1920)
+    np.testing.assert_array_equal(timeline.frame, frames[0])
     assert timeline.submitted == timeline.sent == timeline.played == 0
 
 
-async def test_silent_model_clip_loops_without_repeated_diffusion_drift(tmp_path):
+async def test_idle_continues_generating_fresh_video_and_preserves_audio_history(tmp_path):
     session, worker = await make_session(tmp_path)
     try:
         session.viewer_ready.set()
-        for _ in range(100):
-            session.timeline.audio(1920)
-            if session.metrics["idle_blocks"] == 2:
-                break
-            await asyncio.sleep(0.01)
-        assert session.metrics["idle_blocks"] == 2
-        assert session.timeline.idle_loop is not None
-        for _ in range(150):
-            session.timeline.audio(1920)
-            await asyncio.sleep(0)
-        assert [op for op, _ in worker.calls].count("infer") == 2
-        assert session.timeline.idle_source is not None
-        # Speech gets a fresh model result and clears the silent loop.
+        previous = session.history.copy()
+        chunk = worker.info["chunk_samples"]
+        for batch in range(12):
+            await until(lambda: session.timeline.idle_next is not None)
+            assert session.metrics["idle_blocks"] == batch + 1
+            conditioning = worker.calls[-1][1][0]
+            np.testing.assert_array_equal(conditioning[:-chunk], previous[chunk:])
+            assert 0 < np.max(np.abs(conditioning[-chunk:])) <= IDLE_NOISE_AMPLITUDE
+            assert not np.array_equal(conditioning[-chunk:], previous[-chunk:])
+            previous = conditioning.copy()
+            for _ in range(2):
+                assert not np.any(session.timeline.audio(1920))
+                assert np.all(session.timeline.frame == batch + 2)
+        assert session.timeline.submitted == session.timeline.sent == session.timeline.played == 0
+
+        # Pausing consumption bounds generation even after prolonged silence.
+        await until(lambda: session.timeline.idle_next is not None)
+        calls = len(worker.calls)
+        await asyncio.sleep(0.12)
+        assert len(worker.calls) == calls
+
+        # Speech uses the same model and history; the next silent block resumes
+        # immediately after it without resetting to the reference portrait.
         await session.push(np.ones(480, dtype="<i2").tobytes(), {"sample_rate": 48000})
         await session.end_turn()
-        assert session.timeline.idle_loop is None
-        assert session.idle_generated_since_speech == 0
-        assert [op for op, _ in worker.calls].count("infer") == 3
+        assert session.timeline.idle_next is None
+        assert np.all(session.timeline.audio(480) == 1)
+        speech_history = worker.calls[-1][1][0].copy()
+        await until(lambda: session.timeline.idle_next is not None)
+        np.testing.assert_array_equal(worker.calls[-1][1][0][:-chunk], speech_history[chunk:])
+        assert not np.any(session.timeline.audio(1920))
+        assert np.all(session.timeline.frame == len(worker.calls))
+        assert [op for op, _ in worker.calls].count("prepare") == 1
+    finally:
+        await session.close()
+
+
+async def test_idle_does_not_insert_silence_into_partial_speech(tmp_path):
+    session, worker = await make_session(tmp_path)
+    try:
+        await session.push(np.full(480, 1000, dtype="<i2").tobytes(), {"sample_rate": 48000})
+        await until(lambda: len(session.pending) == 480)
+        session.viewer_ready.set()
+        await asyncio.sleep(0.12)
+        assert [op for op, _ in worker.calls] == ["prepare"]
+        target, _ = await session.end_turn()
+        assert target == 480
+        assert np.max(worker.calls[1][1][0]) > 0.01
+        await until(lambda: session.metrics["idle_blocks"] == 1)
+        assert len(worker.calls) == 3
     finally:
         await session.close()

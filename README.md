@@ -62,7 +62,7 @@ async with client.avatar("portrait.jpg", quality="low") as avatar:
 
 `stream()` accepts generated PCM audio and returns after playback finishes. WAV and MP3 files are also supported.
 
-Avatars keep generating idle motion while listening and after interruptions. The GPU stays active until the session ends; speech takes priority over idle generation.
+Avatars keep generating fresh idle video while listening and after interruptions, using near-silent audio with very low-level noise for model conditioning. Speech and idle video share the same motion state; idle clips are never looped or replaced with an animated portrait. The noise is not sent to speakers. Generation keeps at most one idle batch ahead of playback, and speech takes priority. The GPU stays active throughout a connected session; smooth continuous motion requires inference to keep up with playback.
 
 **GPU compatibility:** PyTorch uses CUDA 12.8 for Blackwell (including RTX 50-series) and CUDA 12.6 for older NVIDIA GPUs. Pre-Ampere cards use FP32, which needs more VRAM and may be slower. AMD and Apple GPUs are not supported by this backend. Blackwell and pre-Ampere inference still need hardware validation.
 

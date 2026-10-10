@@ -9,6 +9,7 @@ import torch.distributed as dist
 from einops import rearrange
 
 from transformers import Wav2Vec2FeatureExtractor
+from openspline_server.warmup import WarmupSpan
 
 from openspline_server._vendor.flash_head.src.modules.flash_head_model import WanModelAudioProject
 from openspline_server._vendor.flash_head.audio_analysis.wav2vec2 import Wav2Vec2Model
@@ -85,22 +86,24 @@ class FlashHeadPipeline:
             model_dir = os.path.join(checkpoint_dir, "Model_Lite")
             vae_dir = os.path.join(checkpoint_dir, "VAE_LTX")
 
-            from openspline_server._vendor.flash_head.ltx_video.ltx_vae import LtxVAE
-            self.vae = LtxVAE(
-                pretrained_model_type_or_path=vae_dir,
-                dtype=self.param_dtype,
-                device=self.device,
-            )
+            with WarmupSpan("vae_load", synchronize=torch.cuda.synchronize):
+                from openspline_server._vendor.flash_head.ltx_video.ltx_vae import LtxVAE
+                self.vae = LtxVAE(
+                    pretrained_model_type_or_path=vae_dir,
+                    dtype=self.param_dtype,
+                    device=self.device,
+                )
         else:
             vae_path = os.path.join(checkpoint_dir, "VAE_Wan/Wan2.1_VAE.pth")
             
-            from openspline_server._vendor.flash_head.wan.modules import WanVAE
-            self.vae = WanVAE(
-                vae_path=vae_path,
-                dtype=self.param_dtype,
-                device=self.device,
-                parallel=(USE_PARALLEL_VAE and self.use_usp),
-            )
+            with WarmupSpan("vae_load", synchronize=torch.cuda.synchronize):
+                from openspline_server._vendor.flash_head.wan.modules import WanVAE
+                self.vae = WanVAE(
+                    vae_path=vae_path,
+                    dtype=self.param_dtype,
+                    device=self.device,
+                    parallel=(USE_PARALLEL_VAE and self.use_usp),
+                )
 
             if self.model_type == "pretrained":
                 self.audio_guide_scale = 3.0
@@ -108,9 +111,11 @@ class FlashHeadPipeline:
             elif self.model_type == "pro":
                 model_dir = os.path.join(checkpoint_dir, "Model_Pro")
         
-        self.model = WanModelAudioProject.from_pretrained(model_dir, local_files_only=True)
-        self.model.eval().requires_grad_(False)
-        self.model.to(device=self.device, dtype=self.param_dtype)
+        with WarmupSpan("avatar_model_load"):
+            self.model = WanModelAudioProject.from_pretrained(model_dir, local_files_only=True)
+            self.model.eval().requires_grad_(False)
+        with WarmupSpan("avatar_model_to_gpu", synchronize=torch.cuda.synchronize):
+            self.model.to(device=self.device, dtype=self.param_dtype)
 
         self.config = self.model.config
 
@@ -121,24 +126,31 @@ class FlashHeadPipeline:
             self.sp_size = 1
 
         if dist.is_initialized():
-            dist.barrier()
+            with WarmupSpan("model_load_barrier"):
+                dist.barrier()
 
         self.num_timesteps = num_timesteps
         self.use_timestep_transform = use_timestep_transform
 
         if COMPILE_MODEL:
-            self.model = torch.compile(self.model)
+            with WarmupSpan("compile_model_setup"):
+                self.model = torch.compile(self.model)
         if COMPILE_VAE:
-            if self.use_ltx:
-                self.vae.model.encode = torch.compile(self.vae.model.encode)
-                self.vae.model.decode = torch.compile(self.vae.model.decode)
-            else:
-                self.vae.encode = torch.compile(self.vae.encode)
-                self.vae.decode = torch.compile(self.vae.decode)
+            with WarmupSpan("compile_vae_setup"):
+                if self.use_ltx:
+                    self.vae.model.encode = torch.compile(self.vae.model.encode)
+                    self.vae.model.decode = torch.compile(self.vae.model.decode)
+                else:
+                    self.vae.encode = torch.compile(self.vae.encode)
+                    self.vae.decode = torch.compile(self.vae.decode)
 
-        self.audio_encoder = Wav2Vec2Model.from_pretrained(wav2vec_dir, local_files_only=True).to(self.device)
+        with WarmupSpan("audio_model_load"):
+            self.audio_encoder = Wav2Vec2Model.from_pretrained(wav2vec_dir, local_files_only=True)
+        with WarmupSpan("audio_model_to_gpu", synchronize=torch.cuda.synchronize):
+            self.audio_encoder = self.audio_encoder.to(self.device)
         self.audio_encoder.feature_extractor._freeze_parameters()
-        self.wav2vec_feature_extractor = Wav2Vec2FeatureExtractor.from_pretrained(wav2vec_dir, local_files_only=True)
+        with WarmupSpan("audio_feature_extractor_load"):
+            self.wav2vec_feature_extractor = Wav2Vec2FeatureExtractor.from_pretrained(wav2vec_dir, local_files_only=True)
 
     @torch.no_grad()
     def prepare_params(self,

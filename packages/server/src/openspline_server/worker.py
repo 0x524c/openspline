@@ -16,6 +16,8 @@ from pathlib import Path
 
 import numpy as np
 
+from .warmup import WarmupSpan
+
 
 class WorkerFailure(RuntimeError):
     pass
@@ -43,19 +45,25 @@ class GPUEngine:
     def __init__(self, settings, world_size):
         from .hardware import validate_cuda, validate_distributed
 
-        dtype = validate_cuda(int(os.environ.get("LOCAL_RANK", "0")))
+        with WarmupSpan("torch_import"):
+            import torch
+        with WarmupSpan("cuda_validate"):
+            dtype = validate_cuda(int(os.environ.get("LOCAL_RANK", "0")))
         if world_size > 1:
-            validate_distributed()
-        from ._vendor.flash_head import inference as inf
+            with WarmupSpan("distributed_validate"):
+                validate_distributed()
+        with WarmupSpan("pipeline_imports"):
+            from ._vendor.flash_head import inference as inf
 
         self.inf = inf
-        self.pipeline = inf.get_pipeline(
-            world_size,
-            settings["model_dir"],
-            "lite" if settings["quality"] == "low" else "pro",
-            settings["audio_model_dir"],
-            param_dtype=dtype,
-        )
+        with WarmupSpan("pipeline_load", synchronize=torch.cuda.synchronize):
+            self.pipeline = inf.get_pipeline(
+                world_size,
+                settings["model_dir"],
+                "lite" if settings["quality"] == "low" else "pro",
+                settings["audio_model_dir"],
+                param_dtype=dtype,
+            )
         if world_size > 1:
             import torch.distributed as dist
 
@@ -68,7 +76,8 @@ class GPUEngine:
                     "The configured GPU group did not initialize all inference ranks"
                 )
             # Report readiness only after every rank has finished loading its model.
-            dist.barrier()
+            with WarmupSpan("ranks_ready_barrier"):
+                dist.barrier()
         self.params = inf.get_infer_params()
         self.fps = self.params["tgt_fps"]
         self.motion = self.params["motion_frames_num"]
@@ -76,6 +85,7 @@ class GPUEngine:
         self.cache_samples = self.params["cached_audio_duration"] * 16000
         self.start = self.params["cached_audio_duration"] * self.fps - self.params["frame_num"]
         self.end = self.params["cached_audio_duration"] * self.fps
+        self.first_inference = True
 
     def prepare(self, image, seed=0):
         import random
@@ -86,12 +96,26 @@ class GPUEngine:
         np.random.seed(seed)
         torch.manual_seed(seed)
         torch.cuda.manual_seed_all(seed)
-        self.inf.get_base_data(self.pipeline, image, seed, False)
+        self.first_inference = True
+        with WarmupSpan("portrait_encode", synchronize=torch.cuda.synchronize):
+            self.inf.get_base_data(self.pipeline, image, seed, False)
 
     def infer(self, audio):
-        embedding = self.inf.get_audio_embedding(self.pipeline, audio, self.start, self.end)
-        frames = self.inf.run_pipeline(self.pipeline, embedding)[self.motion :]
-        return frames.cpu().numpy().astype(np.uint8, copy=False)
+        if not self.first_inference:
+            embedding = self.inf.get_audio_embedding(self.pipeline, audio, self.start, self.end)
+            frames = self.inf.run_pipeline(self.pipeline, embedding)[self.motion :]
+            return frames.cpu().numpy().astype(np.uint8, copy=False)
+        import torch
+
+        with WarmupSpan("first_inference"):
+            with WarmupSpan("first_audio_embedding", synchronize=torch.cuda.synchronize):
+                embedding = self.inf.get_audio_embedding(self.pipeline, audio, self.start, self.end)
+            with WarmupSpan("first_video_generation", synchronize=torch.cuda.synchronize):
+                frames = self.inf.run_pipeline(self.pipeline, embedding)[self.motion :]
+            with WarmupSpan("first_frame_cpu_transfer"):
+                result = frames.cpu().numpy().astype(np.uint8, copy=False)
+        self.first_inference = False
+        return result
 
 
 def _rank_main(rank, world_size, settings, conn, port):
@@ -103,7 +127,8 @@ def _rank_main(rank, world_size, settings, conn, port):
         MASTER_PORT=str(port),
     )
     try:
-        engine = TestEngine() if settings["backend"] == "test" else GPUEngine(settings, world_size)
+        with WarmupSpan("worker_initialize", quality=settings.get("quality")):
+            engine = TestEngine() if settings["backend"] == "test" else GPUEngine(settings, world_size)
         dist = None
         if world_size > 1:
             import torch.distributed as dist
@@ -221,6 +246,13 @@ class Worker:
         self.lock = asyncio.Lock()
 
     async def start(self):
+        with WarmupSpan("worker_start", component="server", worker_id=self.config.id) as timing:
+            await self._start()
+            if self.error:
+                # Startup records failures instead of raising; preserve that contract.
+                timing.finish(WorkerFailure(self.error))
+
+    async def _start(self):
         self.ready = False
         self.info = {}
         logging.getLogger(__name__).warning(

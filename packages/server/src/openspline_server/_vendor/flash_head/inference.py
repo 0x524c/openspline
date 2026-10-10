@@ -8,14 +8,16 @@ from openspline_server._vendor.flash_head.src.pipeline.flash_head_pipeline impor
 from openspline_server._vendor.flash_head.src.distributed.usp_device import get_device, get_parallel_degree
 
 from pathlib import Path
+from openspline_server.warmup import WarmupSpan
 
 with (Path(__file__).parent / "configs/infer_params.yaml").open() as f:
     infer_params = yaml.safe_load(f)
 
 def get_pipeline(world_size, ckpt_dir, model_type, wav2vec_dir, param_dtype=torch.bfloat16):
     global infer_params
-    ulysses_degree, ring_degree = get_parallel_degree(world_size, infer_params['num_heads'])
-    device = get_device(ulysses_degree, ring_degree)
+    with WarmupSpan("distributed_init"):
+        ulysses_degree, ring_degree = get_parallel_degree(world_size, infer_params['num_heads'])
+        device = get_device(ulysses_degree, ring_degree)
     logger.info(f"ulysses_degree: {ulysses_degree}, ring_degree: {ring_degree}, device: {device}")
 
     pipeline = FlashHeadPipeline(

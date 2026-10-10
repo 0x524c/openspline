@@ -175,9 +175,12 @@ def main():
     elif args.command == "benchmark":
         asyncio.run(benchmark(args))
     else:
-        import uvicorn
+        from .warmup import WarmupSpan
 
-        from .app import create_app
+        with WarmupSpan("server_imports", component="server"):
+            import uvicorn
+
+            from .app import create_app
 
         settings = Settings.from_file(args.config, backend=args.backend)
         if args.backend == "test":
