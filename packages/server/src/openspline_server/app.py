@@ -628,7 +628,8 @@ def create_app(settings: Settings | None = None):
         await run_demo(ws, sessions.get(id), provider, remove)
 
     if STATIC.exists():
-        app.mount("/static", StaticFiles(directory=STATIC), name="static")
+        # uv may install package assets as symlinks into its cache.
+        app.mount("/static", StaticFiles(directory=STATIC, follow_symlink=True), name="static")
 
         @app.get("/")
         async def index():
