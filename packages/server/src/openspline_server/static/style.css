@@ -44,6 +44,7 @@ button:hover { background: #f3f3f4; }
 .primary { flex: 1; border-color: #202124; background: #202124; color: #fff; font-weight: 500; }
 .primary:hover { background: #38393c; }
 .actions { display: flex; gap: 8px; }
+.download { display: inline-block; margin-top: 12px; font-size: 13px; font-weight: 500; }
 button:disabled, fieldset:disabled { opacity: .55; }
 button:disabled { cursor: wait; }
 fieldset:disabled .gpu-option { cursor: default; }

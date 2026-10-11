@@ -29,7 +29,7 @@ export class AvatarConnection extends EventTarget {
             const playback = this.socketPlayback = new SocketPlayback(this.session, this.video);
             playback.addEventListener('statechange', e => this.status(e.detail));
             playback.addEventListener('error', e => { this.status('error'); this.dispatchEvent(new CustomEvent('error', { detail: e.detail })); });
-            for (const type of ['autoplayblocked', 'turnend', 'event'])
+            for (const type of ['autoplayblocked', 'turnend', 'event', 'media'])
                 playback.addEventListener(type, e => this.dispatchEvent(new CustomEvent(type, { detail: e.detail })));
             await playback.connect();
             return;
@@ -121,6 +121,8 @@ export class AvatarConnection extends EventTarget {
     async play() { if (this.socketPlayback)
         return this.socketPlayback.play(); await this.video.play(); this.lastSamples = -1; if (this.channel?.readyState === 'open')
         this.channel.send(JSON.stringify({ type: 'ready' })); }
+    createRecordingStream() { if (!this.socketPlayback)
+        throw new Error('Recording requires WebSocket playback'); return this.socketPlayback.createRecordingStream(); }
     close() { this.aborted = true; ++this.generation; this.socketPlayback?.close(); this.socketPlayback = undefined; for (const timer of this.timers)
         clearTimeout(timer); this.timers.clear(); clearInterval(this.heartbeat); clearInterval(this.statsTimer); this.channel?.close(); this.pc?.close(); this.video.srcObject = null; this.status('disconnected'); }
 }

@@ -7,6 +7,7 @@ export class SocketPlayback extends EventTarget {
   private context?: AudioContext;
   private canvas = document.createElement('canvas');
   private stream?: MediaStream;
+  private recordingDestination?: MediaStreamAudioDestinationNode;
   private sources = new Set<AudioBufferSourceNode>();
   private frames: {at:number;image:ImageBitmap}[] = [];
   private acknowledgments: {at:number;samples:number;epoch:number}[] = [];
@@ -89,12 +90,14 @@ export class SocketPlayback extends EventTarget {
       this.lastSamples=event.samples;
       for(const end of this.turnEnds)if(end<event.samples)this.turnEnds.delete(end);
       const source=context.createBufferSource();source.buffer=buffer;source.connect(context.destination);
+      if(this.recordingDestination)source.connect(this.recordingDestination);
       this.sources.add(source);source.onended=()=>{this.sources.delete(source);source.disconnect();};source.start(at);
       this.end=at+buffer.duration;
       this.idle=false;
       const latency=context.outputLatency||context.baseLatency||0;
       this.frames.push({at:at+latency,image});
       this.acknowledgments.push({at:this.end+latency,samples:event.samples,epoch:event.epoch});
+      this.event('media');
     } else {
       if(event.type==='interrupted'){this.epoch=event.epoch;this.clear();this.event('statechange','ready');}
       if(event.type==='playback_ready')this.event('statechange','ready');
@@ -123,6 +126,11 @@ export class SocketPlayback extends EventTarget {
     await this.context!.resume();await this.video.play();
     if(this.context!.state!=='running')throw new Error('Enable audio playback to continue');
     this.send({type:'ready'});
+  }
+  createRecordingStream() {
+    if(!this.context||!this.stream||this.closed)throw new Error('Playback is not ready to record');
+    this.recordingDestination=this.context.createMediaStreamDestination();
+    return new MediaStream([...this.stream.getVideoTracks(),...this.recordingDestination.stream.getAudioTracks()]);
   }
   private clear() {
     for(const source of this.sources){source.stop();source.disconnect();}this.sources.clear();

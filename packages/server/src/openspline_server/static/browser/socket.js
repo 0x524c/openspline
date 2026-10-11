@@ -7,6 +7,7 @@ export class SocketPlayback extends EventTarget {
     context;
     canvas = document.createElement('canvas');
     stream;
+    recordingDestination;
     sources = new Set();
     frames = [];
     acknowledgments = [];
@@ -122,6 +123,8 @@ export class SocketPlayback extends EventTarget {
             const source = context.createBufferSource();
             source.buffer = buffer;
             source.connect(context.destination);
+            if (this.recordingDestination)
+                source.connect(this.recordingDestination);
             this.sources.add(source);
             source.onended = () => { this.sources.delete(source); source.disconnect(); };
             source.start(at);
@@ -130,6 +133,7 @@ export class SocketPlayback extends EventTarget {
             const latency = context.outputLatency || context.baseLatency || 0;
             this.frames.push({ at: at + latency, image });
             this.acknowledgments.push({ at: this.end + latency, samples: event.samples, epoch: event.epoch });
+            this.event('media');
         }
         else {
             if (event.type === 'interrupted') {
@@ -180,6 +184,12 @@ export class SocketPlayback extends EventTarget {
         if (this.context.state !== 'running')
             throw new Error('Enable audio playback to continue');
         this.send({ type: 'ready' });
+    }
+    createRecordingStream() {
+        if (!this.context || !this.stream || this.closed)
+            throw new Error('Playback is not ready to record');
+        this.recordingDestination = this.context.createMediaStreamDestination();
+        return new MediaStream([...this.stream.getVideoTracks(), ...this.recordingDestination.stream.getAudioTracks()]);
     }
     clear() {
         for (const source of this.sources) {
