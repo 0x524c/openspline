@@ -263,4 +263,13 @@ Real low/high inference, GPU streaming, browser/React playback, and native LiveK
 
 [MIT](LICENSE). The vendored inference code retains its [Apache-2.0 license](packages/server/src/openspline_server/_vendor/LICENSE) and [third-party notices](packages/server/NOTICE); model weights have separate terms.
 
-Built on [SoulX-FlashHead](https://github.com/Soul-AILab/SoulX-FlashHead).
+## Acknowledgments
+
+Openspline builds on open research and infrastructure, with thanks to the teams and contributors behind:
+
+- [SoulX-FlashHead](https://github.com/Soul-AILab/SoulX-FlashHead) for the audio-driven talking-head models and inference code that power avatar generation.
+- [LiveKit Agents](https://github.com/livekit/agents) for the real-time agent framework that Openspline integrates with to bring avatars into voice conversations.
+- [Wan](https://github.com/Wan-Video/Wan2.1) for video generation research and VAE components used in the inference backend through SoulX-FlashHead.
+- [LTX-Video](https://github.com/Lightricks/LTX-Video) for video autoencoder components used in the inference backend through SoulX-FlashHead.
+
+Openspline carries this work forward with a self-hosted runtime for interactive avatars: synchronized audio and video streaming, continuous idle motion, interruption handling, GPU worker orchestration, and a shared API across voice providers. Its Python and Node SDKs, agent connectors, and embeddable players make these capabilities available to developers building their own conversational experiences.
