@@ -32,11 +32,7 @@ Run the following command in a linux device/WSL2 with NVIDIA GPU:
 curl -fsSL https://raw.githubusercontent.com/openspline/openspline/main/install.sh | sh
 ```
 
-The installer creates a private Python environment and downloads the Low and High models. It uses GPU 0 by default. To choose another GPU:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/openspline/openspline/main/install.sh | OPENSPLINE_GPU=1 sh
-```
+The installer creates a private Python environment and downloads the Low and High models.
 
 ### Launch the demo
 
