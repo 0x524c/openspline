@@ -13,6 +13,7 @@ from pathlib import Path
 
 import av
 from aiortc import RTCConfiguration, RTCIceServer, RTCPeerConnection, RTCSessionDescription
+from anyio import CancelScope
 from fastapi import (
     FastAPI,
     File,
@@ -553,12 +554,14 @@ def create_app(settings: Settings | None = None):
                             }
                         )
             finally:
-                sender.cancel()
-                for task in pending:
-                    task.cancel()
-                await asyncio.gather(sender, *pending, return_exceptions=True)
-                s.publisher_connected = False
-                await remove(id)
+                # Disconnect cancellation must not abandon tasks or worker ownership.
+                with CancelScope(shield=True):
+                    sender.cancel()
+                    for task in pending:
+                        task.cancel()
+                    await asyncio.gather(sender, *pending, return_exceptions=True)
+                    s.publisher_connected = False
+                    await remove(id)
         except (WebSocketDisconnect, asyncio.TimeoutError):
             pass
 

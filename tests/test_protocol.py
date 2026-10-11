@@ -1,9 +1,14 @@
+import asyncio
 import base64
 import io
+import threading
 
+import anyio
+import pytest
 from fastapi.testclient import TestClient
 from openspline_server.app import create_app
 from openspline_server.config import Settings, WorkerConfig
+from openspline_server.session import Session
 from PIL import Image
 
 
@@ -74,6 +79,53 @@ def test_socket_short_utterance_and_epoch(tmp_path):
             ws.send_json({"type": "interrupt", "id": "i"})
             assert ws.receive_json()["type"] == "interrupted"
             assert ws.receive_json()["epoch"] == 1
+
+
+@pytest.mark.parametrize("cleanup_stage", ["sender", "session"])
+def test_publisher_disconnect_finishes_cleanup_when_handler_is_cancelled(
+    tmp_path, monkeypatch, cleanup_stage
+):
+    closing = threading.Event()
+    closed = threading.Event()
+    original_close = Session.close
+
+    async def slow_close(session):
+        if cleanup_stage == "session":
+            closing.set()
+            # Keep teardown in flight when TestClient cancels the WebSocket handler.
+            await anyio.sleep(0.05)
+        await original_close(session)
+        closed.set()
+
+    monkeypatch.setattr(Session, "close", slow_close)
+    app = create_app(Settings(backend="test", runtime_dir=str(tmp_path)))
+    with TestClient(app) as client:
+        session = client.post("/v1/sessions", files={"portrait": ("p.png", image())}).json()
+        state = app.state.sessions[session["id"]]
+        original_get = state.events.get
+
+        async def slow_get():
+            try:
+                return await original_get()
+            except asyncio.CancelledError:
+                closing.set()
+                await anyio.sleep(0.05)
+                raise
+
+        if cleanup_stage == "sender":
+            monkeypatch.setattr(state.events, "get", slow_get)
+        with client.websocket_connect(f"/v1/sessions/{session['id']}/audio") as ws:
+            ws.send_json({"token": session["publisher_token"]})
+            assert ws.receive_json()["type"] == "ready"
+            ws.close()
+            assert closing.wait(5), "Publisher cleanup did not start"
+        assert closed.is_set(), "WebSocket cancellation interrupted session cleanup"
+        assert not state.publisher_connected
+        assert state.task.done()
+        assert state.worker.owner is None
+        assert session["id"] not in app.state.sessions
+        assert not (tmp_path / "sessions" / session["id"]).exists()
+        assert client.post("/v1/sessions", files={"portrait": ("p.png", image())}).status_code == 201
 
 
 def test_multiple_workers_and_quality(tmp_path):
