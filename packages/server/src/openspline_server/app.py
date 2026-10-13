@@ -27,7 +27,7 @@ from fastapi import (
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
-from PIL import Image, UnidentifiedImageError
+from PIL import Image, ImageOps, UnidentifiedImageError
 
 from .config import Settings
 from .media import AudioTrack, VideoTrack
@@ -260,7 +260,16 @@ def create_app(settings: Settings | None = None):
             picture = Image.open(io.BytesIO(raw))
             if picture.width * picture.height > 16_000_000:
                 raise ValueError("Portrait limit is 16 megapixels")
-            picture = picture.convert("RGB")
+            picture = ImageOps.exif_transpose(picture).convert("RGB")
+            # Prepare once for both idle playback and GPU conditioning. The model
+            # center-crops to 512 square; packing the full photo here prevents it
+            # from discarding the sides of landscape portraits (or head/chin).
+            content = ImageOps.contain(picture, (512, 512), Image.Resampling.LANCZOS)
+            width, height = content.size
+            left, top = (512 - width) // 2, (512 - height) // 2
+            background = picture.resize((1, 1), Image.Resampling.BOX).getpixel((0, 0))
+            picture = Image.new("RGB", (512, 512), background)
+            picture.paste(content, (left, top))
         except (UnidentifiedImageError, ValueError, OSError, Image.DecompressionBombError) as exc:
             raise HTTPException(422, str(exc)) from exc
         id = secrets.token_hex(16)
@@ -274,7 +283,7 @@ def create_app(settings: Settings | None = None):
         folder.mkdir(parents=True)
         image = folder / "portrait.jpg"
         picture.save(image)
-        s = Session(id, worker, image, settings)
+        s = Session(id, worker, image, settings, frame_content=(left, top, width, height))
         try:
             await s.start()
         except Exception as exc:

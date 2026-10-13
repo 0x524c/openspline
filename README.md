@@ -8,7 +8,7 @@
 **Add a live face to any voice AI agent in five lines.** Turn a portrait and generated audio into synchronized video and speech on your own GPU.
 
 [![try demo](https://img.shields.io/badge/try%20demo-2EA44F?style=for-the-badge)](https://dashboard.openspline.dev/explore)
-[![Join Discord](https://img.shields.io/badge/Join%20Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/TakW6EGs5)
+
 
 - **Bring your agent.** Keep your prompts, tools, microphone, and voice provider.
 - **Python first, Node supported.** Stream audio or use a ready-made connector.

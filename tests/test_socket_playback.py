@@ -23,6 +23,67 @@ def portrait():
     return data.getvalue()
 
 
+@pytest.mark.parametrize(
+    "size,orientation",
+    [((960, 540), 1), ((540, 960), 1), ((640, 640), 1), ((961, 539), 1), ((960, 540), 6)],
+)
+def test_portrait_framing_preserves_edges_and_matches_idle(tmp_path, size, orientation):
+    from PIL import ImageOps
+
+    source = Image.new("RGB", size, "white")
+    w, h = size
+    # Mark all four corners: a crop must not silently remove any of them.
+    for box, color in [
+        ((0, 0, w // 4, h // 4), "red"),
+        ((3 * w // 4, 0, w, h // 4), "lime"),
+        ((0, 3 * h // 4, w // 4, h), "blue"),
+        ((3 * w // 4, 3 * h // 4, w, h), "yellow"),
+    ]:
+        source.paste(color, box)
+    exif = source.getexif()
+    exif[274] = orientation
+    data = io.BytesIO()
+    source.save(data, format="PNG", exif=exif)
+    expected = ImageOps.contain(ImageOps.exif_transpose(source), (512, 512))
+    ew, eh = expected.size
+    bounds = [(512 - ew) // 2, (512 - eh) // 2, ew, eh]
+    app = create_app(Settings(backend="test", runtime_dir=str(tmp_path)))
+    with TestClient(app) as client:
+        response = client.post("/v1/sessions", files={"portrait": ("p.png", data.getvalue())})
+        assert response.status_code == 201, response.text
+        s = response.json()
+        path = f"/v1/sessions/{s['id']}"
+        headers = {"Authorization": "Bearer " + s["token"]}
+        prepared = Image.open(io.BytesIO(client.get(path + "/portrait", headers=headers).content))
+        assert prepared.size == (512, 512)
+        x, y, width, height = bounds
+        content = prepared.crop((x, y, x + width, y + height))
+        for px, py in [
+            (width // 8, height // 8),
+            (7 * width // 8, height // 8),
+            (width // 8, 7 * height // 8),
+            (7 * width // 8, 7 * height // 8),
+        ]:
+            np.testing.assert_allclose(
+                content.getpixel((px, py)), expected.getpixel((px, py)), atol=5
+            )
+        session = app.state.sessions[s["id"]]
+        np.testing.assert_array_equal(session.timeline.portrait, np.asarray(prepared))
+        with client.websocket_connect(path + "/playback") as ws:
+            ws.send_json({"token": s["token"]})
+            connected = ws.receive_json()
+            assert connected["frame_content"] == bounds
+            ws.send_json({"type": "ready"})
+            while (event := ws.receive_json())["type"] != "idle":
+                pass
+            idle = Image.open(io.BytesIO(base64.b64decode(event["image"])))
+            np.testing.assert_allclose(
+                idle.getpixel((x + width // 8, y + height // 8)),
+                content.getpixel((width // 8, height // 8)),
+                atol=5,
+            )
+
+
 def test_playback_auth_ownership_file_and_release(tmp_path):
     with TestClient(create_app(Settings(backend="test", runtime_dir=str(tmp_path)))) as client:
         s = client.post("/v1/sessions", files={"portrait": ("p.png", portrait())}).json()
@@ -93,7 +154,9 @@ async def test_slow_playback_is_bounded_and_interrupt_discards_encoding():
     timeline = Timeline(np.zeros((16, 16, 3), dtype=np.uint8))
     ready = asyncio.Event()
     ready.set()
-    session = SimpleNamespace(timeline=timeline, viewer_ready=ready, epoch=0, closed=False)
+    session = SimpleNamespace(
+        timeline=timeline, viewer_ready=ready, epoch=0, closed=False, frame_content=(0, 0, 512, 512)
+    )
     packets = []
 
     class Socket:
@@ -140,7 +203,9 @@ async def test_wan_feedback_does_not_create_audio_gaps(monkeypatch, round_trip):
     timeline = Timeline(np.zeros((16, 16, 3), dtype=np.uint8))
     ready = asyncio.Event()
     ready.set()
-    session = SimpleNamespace(timeline=timeline, viewer_ready=ready, epoch=0, closed=False)
+    session = SimpleNamespace(
+        timeline=timeline, viewer_ready=ready, epoch=0, closed=False, frame_content=(0, 0, 512, 512)
+    )
     await timeline.put(
         Segment(np.zeros(96000, np.int16), np.zeros((50, 16, 16, 3), np.uint8), 25, 0)
     )

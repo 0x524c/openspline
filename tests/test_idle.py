@@ -122,7 +122,9 @@ async def test_socket_idle_is_paced_acknowledged_and_independent_of_audio():
     timeline.put_idle(np.full((40, 8, 8, 3), 7, dtype=np.uint8), 25, 0)
     ready = asyncio.Event()
     ready.set()
-    session = SimpleNamespace(timeline=timeline, viewer_ready=ready, epoch=0, closed=False)
+    session = SimpleNamespace(
+        timeline=timeline, viewer_ready=ready, epoch=0, closed=False, frame_content=(0, 0, 512, 512)
+    )
     packets = []
 
     class Socket:

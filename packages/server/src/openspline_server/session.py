@@ -27,8 +27,9 @@ class Input:
 
 
 class Session:
-    def __init__(self, id, worker, image, settings):
+    def __init__(self, id, worker, image, settings, *, frame_content=(0, 0, 512, 512)):
         self.id, self.worker, self.image, self.settings = id, worker, image, settings
+        self.frame_content = frame_content
         self.publisher_token = secrets.token_urlsafe(32)
         self.viewer_token = secrets.token_urlsafe(32)
         self.token_expires = time.time() + settings.token_ttl

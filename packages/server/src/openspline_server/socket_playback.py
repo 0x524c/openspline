@@ -41,7 +41,9 @@ class SocketPlayback:
 
     async def send(self):
         s = self.session
-        await self.websocket.send_json({"type": "connected", "epoch": s.epoch})
+        await self.websocket.send_json(
+            {"type": "connected", "epoch": s.epoch, "frame_content": s.frame_content}
+        )
         while not self.closed and not s.closed:
             while not self.events.empty():
                 await self.websocket.send_json(self.events.get_nowait())
