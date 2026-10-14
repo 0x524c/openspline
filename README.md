@@ -1,15 +1,15 @@
-<div align="center">
+<!-- <div align="center">
 <a href="https://openspline.dev/">
   <img alt="Openspline : give your ai a face" src="https://github.com/openspline/openspline/blob/main/media/banner2.png?raw=true"  width="full">
 </a>
-</div>
-
-<p align="center">
+</div> -->
+# OpenSpline
+<!-- <p align="center"> -->
   <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-2EA44F?style=flat-square"></a>
   <a href="#python-sdk"><img alt="Python 3.10 to 3.12" src="https://img.shields.io/badge/python-3.10%20to%203.12-3776AB?style=flat-square&amp;logo=python&amp;logoColor=white"></a>
   <a href="#node-sdk"><img alt="Node.js 20+" src="https://img.shields.io/badge/node.js-20%2B-339933?style=flat-square&amp;logo=nodedotjs&amp;logoColor=white"></a>
   <a href="#gpu-workers"><img alt="NVIDIA GPU" src="https://img.shields.io/badge/GPU-NVIDIA-76B900?style=flat-square&amp;logo=nvidia&amp;logoColor=white"></a>
-</p>
+<!-- </p> -->
 
 
 
