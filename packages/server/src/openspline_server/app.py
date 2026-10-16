@@ -25,14 +25,15 @@ from fastapi import (
     WebSocketDisconnect,
 )
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 from PIL import Image, ImageOps, UnidentifiedImageError
 
+from .background import MAX_BACKGROUND_BYTES, Background
 from .config import Settings
 from .media import AudioTrack, VideoTrack
 from .session import Session
-from .socket_playback import SocketPlayback
+from .socket_playback import SocketPlayback, jpeg
 from .worker import CapacityError, WorkerPool
 
 STATIC = Path(__file__).parent / "static"
@@ -250,7 +251,11 @@ def create_app(settings: Settings | None = None):
         return "\n".join(lines) + "\n"
 
     @app.post("/v1/sessions", status_code=201)
-    async def create(portrait: UploadFile = File(...), quality: str = Form("low")):
+    async def create(
+        portrait: UploadFile = File(...),
+        quality: str = Form("low"),
+        background: UploadFile | None = File(None),
+    ):
         if quality not in {"low", "high"}:
             raise HTTPException(422, "quality must be low or high")
         raw = await portrait.read(10 * 1024 * 1024 + 1)
@@ -260,33 +265,59 @@ def create_app(settings: Settings | None = None):
             picture = Image.open(io.BytesIO(raw))
             if picture.width * picture.height > 16_000_000:
                 raise ValueError("Portrait limit is 16 megapixels")
-            picture = ImageOps.exif_transpose(picture).convert("RGB")
+            picture = ImageOps.exif_transpose(picture).convert("RGBA")
             # Prepare once for both idle playback and GPU conditioning. The model
             # center-crops to 512 square; packing the full photo here prevents it
             # from discarding the sides of landscape portraits (or head/chin).
             content = ImageOps.contain(picture, (512, 512), Image.Resampling.LANCZOS)
             width, height = content.size
             left, top = (512 - width) // 2, (512 - height) // 2
-            background = picture.resize((1, 1), Image.Resampling.BOX).getpixel((0, 0))
-            picture = Image.new("RGB", (512, 512), background)
-            picture.paste(content, (left, top))
+            alpha = Image.new("L", (512, 512), 0)
+            alpha.paste(content.getchannel("A"), (left, top))
+            color = picture.convert("RGB").resize((1, 1), Image.Resampling.BOX).getpixel((0, 0))
+            picture = Image.new("RGB", (512, 512), color)
+            picture.paste(content.convert("RGB"), (left, top))
         except (UnidentifiedImageError, ValueError, OSError, Image.DecompressionBombError) as exc:
             raise HTTPException(422, str(exc)) from exc
+        compositor = None
+        if background is not None:
+            raw_background = await background.read(MAX_BACKGROUND_BYTES + 1)
+            if len(raw_background) > MAX_BACKGROUND_BYTES:
+                raise HTTPException(413, "Background limit is 25 MiB")
+            try:
+                compositor = await asyncio.to_thread(
+                    Background, raw_background, alpha, (left, top, width, height)
+                )
+            except (ValueError, OSError, Image.DecompressionBombError) as exc:
+                raise HTTPException(422, str(exc)) from exc
         id = secrets.token_hex(16)
         try:
             worker = await pool.acquire(quality, id)
         except CapacityError as exc:
+            if compositor:
+                compositor.close()
             raise HTTPException(429, {"code": "capacity", "message": str(exc)}) from exc
         except ValueError as exc:
+            if compositor:
+                compositor.close()
             raise HTTPException(422, {"code": "configuration", "message": str(exc)}) from exc
         folder = Path(settings.runtime_dir) / "sessions" / id
-        folder.mkdir(parents=True)
-        image = folder / "portrait.jpg"
-        picture.save(image)
-        s = Session(id, worker, image, settings, frame_content=(left, top, width, height))
         try:
+            folder.mkdir(parents=True)
+            image = folder / "portrait.jpg"
+            picture.save(image)
+            s = Session(
+                id,
+                worker,
+                image,
+                settings,
+                frame_content=(left, top, width, height),
+                background=compositor,
+            )
             await s.start()
         except Exception as exc:
+            if compositor:
+                compositor.close()
             await pool.release(worker, id)
             shutil.rmtree(folder, ignore_errors=True)
             raise HTTPException(
@@ -338,6 +369,13 @@ def create_app(settings: Settings | None = None):
     async def portrait(id: str, request: Request):
         s = get(id)
         authorize(request, s, True)
+        if s.timeline.background:
+            data = await asyncio.to_thread(lambda: jpeg(s.timeline.render(0)))
+            return Response(
+                base64.b64decode(data),
+                media_type="image/jpeg",
+                headers={"Cache-Control": "no-store"},
+            )
         return FileResponse(s.image, headers={"Cache-Control": "no-store"})
 
     @app.get("/v1/sessions/{id}/ice")

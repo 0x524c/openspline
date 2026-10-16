@@ -20,7 +20,8 @@ class Segment:
 
 
 class Timeline:
-    def __init__(self, portrait):
+    def __init__(self, portrait, background=None):
+        self.background = background
         self.portrait = portrait
         self.queue = deque()
         self.current = None
@@ -36,6 +37,9 @@ class Timeline:
         self.idle_current = None
         self.idle_next = None
         self.idle_offset = 0
+
+    def render(self, seconds):
+        return self.background.render(self.frame, seconds) if self.background else self.frame
 
     def clear_idle(self):
         self.idle_current = self.idle_next = None
@@ -140,7 +144,8 @@ class VideoTrack(MediaStreamTrack):
 
     async def recv(self):
         await self.timeline.pace(self.pts / 90000)
-        frame = av.VideoFrame.from_ndarray(self.timeline.frame, format="rgb24")
+        data = await asyncio.to_thread(self.timeline.render, self.pts / 90000)
+        frame = av.VideoFrame.from_ndarray(data, format="rgb24")
         frame.pts = self.pts
         frame.time_base = Fraction(1, 90000)
         self.pts += 3600

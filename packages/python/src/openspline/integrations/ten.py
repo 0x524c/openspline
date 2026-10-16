@@ -14,7 +14,17 @@ class AvatarExtension(AsyncExtension):
             raise ValueError("Cannot read openspline properties")
         config = json.loads(raw)
         self.avatar = (
-            await Openspline().avatar(config["portrait"], config.get("quality", "low")).__aenter__()
+            await Openspline()
+            .avatar(
+                config["portrait"],
+                config.get("quality", "low"),
+                **(
+                    {"background": config["background"]}
+                    if config.get("background") is not None
+                    else {}
+                ),
+            )
+            .__aenter__()
         )
         descriptor = Data.create("avatar_session")
         descriptor.set_property_from_json("session", json.dumps(self.avatar.session))

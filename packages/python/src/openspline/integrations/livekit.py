@@ -12,11 +12,20 @@ from openspline import Openspline
 
 class AvatarSession(BaseAvatarSession):
     def __init__(
-        self, portrait, quality=None, client=None, url=None, api_key=None, api_secret=None
+        self,
+        portrait,
+        quality=None,
+        client=None,
+        url=None,
+        api_key=None,
+        api_secret=None,
+        *,
+        background=None,
     ):
         super().__init__()
         self.client = client or Openspline()
         self.portrait = portrait
+        self.background = background
         self.quality = quality
         self.url = url or os.environ.get("LIVEKIT_URL")
         self.key = api_key or os.environ.get("LIVEKIT_API_KEY")
@@ -34,7 +43,11 @@ class AvatarSession(BaseAvatarSession):
 
     async def start(self, agent_session, room):
         await super().start(agent_session, room)
-        self.avatar = await self.client.avatar(self.portrait, self.quality).__aenter__()
+        self.avatar = await self.client.avatar(
+            self.portrait,
+            self.quality,
+            **({"background": self.background} if self.background is not None else {}),
+        ).__aenter__()
         token = (
             api.AccessToken(self.key, self.secret)
             .with_identity(self.identity)

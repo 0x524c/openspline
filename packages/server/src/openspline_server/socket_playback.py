@@ -27,6 +27,7 @@ class SocketPlayback:
         self.idle_sent = self.idle_played = 0
         self.idle_epoch = session.epoch
         self.next_idle_at = 0.0
+        self.video_frames = 0
 
     def acknowledge_idle(self, sequence, epoch):
         if epoch == self.idle_epoch and type(sequence) is int:
@@ -63,7 +64,10 @@ class SocketPlayback:
                 before = timeline.sent
                 audio = timeline.audio(1920)
                 samples = timeline.sent
-                frame = await asyncio.to_thread(jpeg, timeline.frame.copy())
+                frame = await asyncio.to_thread(
+                    lambda: jpeg(timeline.render(self.video_frames / 25))
+                )
+                self.video_frames += 1
                 if epoch != s.epoch:
                     continue
                 await self.websocket.send_json(
@@ -82,10 +86,13 @@ class SocketPlayback:
                 and timeline.played >= timeline.submitted
                 and self.idle_sent - self.idle_played < 25
                 and time.monotonic() >= self.next_idle_at
-                and timeline.advance_idle(1920)
+                and (timeline.advance_idle(1920) or timeline.background is not None)
             ):
                 epoch = s.epoch
-                frame = await asyncio.to_thread(jpeg, timeline.frame.copy())
+                frame = await asyncio.to_thread(
+                    lambda: jpeg(timeline.render(self.video_frames / 25))
+                )
+                self.video_frames += 1
                 if epoch != s.epoch:
                     continue
                 self.idle_sent += 1

@@ -39,3 +39,14 @@ test('viewer timeout uses initialization config',async()=>{
  const avatar=new AvatarSession(new Openspline({viewerTimeout:1}),{id:'test',publisher_token:'private'});
  await assert.rejects(avatar.waitForViewer(),/Playback destination did not connect/);
 });
+
+test('session backgrounds are sent as multipart bytes',async()=>{
+ const client=new Openspline();
+ client.request=async(path,init)=>{
+  assert.equal(path,'/v1/sessions');
+  assert.equal(await init.body.get('portrait').text(),'portrait');
+  assert.equal(await init.body.get('background').text(),'background');
+  throw new Error('captured background');
+ };
+ await assert.rejects(client.avatar(Buffer.from('portrait'),{background:Buffer.from('background')}),/captured background/);
+});

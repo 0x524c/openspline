@@ -18,10 +18,11 @@ from openspline import Openspline
 
 
 class AvatarProcessor(FrameProcessor):
-    def __init__(self, portrait, quality=None, client=None, **kwargs):
+    def __init__(self, portrait, quality=None, client=None, *, background=None, **kwargs):
         super().__init__(**kwargs)
         self.client = client or Openspline()
         self.portrait = portrait
+        self.background = background
         self.quality = quality
         self.avatar = None
         self.task = None
@@ -56,7 +57,11 @@ class AvatarProcessor(FrameProcessor):
             await self.push_frame(frame, direction)
             return
         if isinstance(frame, StartFrame):
-            self.avatar = await self.client.avatar(self.portrait, self.quality).__aenter__()
+            self.avatar = await self.client.avatar(
+                self.portrait,
+                self.quality,
+                **({"background": self.background} if self.background is not None else {}),
+            ).__aenter__()
             await self.push_frame(frame, direction)
             self.task = asyncio.create_task(self._output())
             return

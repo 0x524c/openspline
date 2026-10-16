@@ -14,10 +14,11 @@ export class Openspline {
   readonly url:string;readonly timeout:number;
   readonly config:Readonly<Required<OpensplineConfig>>;
   constructor(options:OpensplineConfig={}) {this.config=resolveConfig(options);this.url=this.config.url;this.timeout=this.config.timeout;}
-  async avatar(portrait:string|Uint8Array,options:{quality?:Quality}={}):Promise<AvatarSession> {
+  async avatar(portrait:string|Uint8Array,options:{quality?:Quality;background?:string|Uint8Array}={}):Promise<AvatarSession> {
     const quality=options.quality??this.config.quality;if(!['low','high'].includes(quality))throw new ConfigurationError('quality must be low or high','configuration');
     const form=new FormData();const bytes=typeof portrait==='string'?await readFile(portrait):portrait;
     form.set('portrait',new Blob([new Uint8Array(bytes)]),'portrait');form.set('quality',quality);
+    if(options.background!==undefined){const background=typeof options.background==='string'?await readFile(options.background):options.background;form.set('background',new Blob([new Uint8Array(background)]),'background');}
     const body=await this.request('/v1/sessions',{method:'POST',body:form});
     const avatar=new AvatarSession(this,body);
     try {await avatar.connect();return avatar;} catch(error) {await avatar.close();throw error;}

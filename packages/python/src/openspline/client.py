@@ -51,16 +51,17 @@ class Openspline:
         self.url = self.config.url
         self.timeout = self.config.timeout
 
-    def avatar(self, portrait, quality: Quality | None = None):
+    def avatar(self, portrait, quality: Quality | None = None, *, background=None):
         quality = self.config.quality if quality is None else quality
         if quality not in {"low", "high"}:
             raise ValueError("quality must be low or high")
-        return AvatarSession(self, portrait, quality)
+        return AvatarSession(self, portrait, quality, background)
 
 
 class AvatarSession:
-    def __init__(self, client, portrait, quality):
+    def __init__(self, client, portrait, quality, background=None):
         self.client, self.portrait, self.quality = client, portrait, quality
+        self.background = background
         self.id = None
         self.viewer_url = None
         self.session = None
@@ -84,9 +85,17 @@ class AvatarSession:
                 raw = Path(self.portrait).read_bytes()
             else:
                 raw = bytes(self.portrait)
+            files = {"portrait": ("portrait", raw)}
+            if self.background is not None:
+                background = (
+                    Path(self.background).read_bytes()
+                    if isinstance(self.background, (str, Path))
+                    else bytes(self.background)
+                )
+                files["background"] = ("background", background)
             response = await self.http.post(
                 "/v1/sessions",
-                files={"portrait": ("portrait", raw)},
+                files=files,
                 data={"quality": self.quality},
             )
             self._check(response)

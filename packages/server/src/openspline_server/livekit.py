@@ -108,8 +108,9 @@ class LiveKitSink:
                 self.started = True
                 self.receiver.notify_playback_started()
             if tick % 2 == 0:
+                pixels = await asyncio.to_thread(timeline.render, tick * 0.02)
                 await self.sync.push(
-                    rtc.VideoFrame(512, 512, rtc.VideoBufferType.RGB24, timeline.frame.tobytes())
+                    rtc.VideoFrame(512, 512, rtc.VideoBufferType.RGB24, pixels.tobytes())
                 )
             if timeline.sent > before:
                 asyncio.get_running_loop().call_later(

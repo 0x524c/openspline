@@ -27,7 +27,9 @@ class Input:
 
 
 class Session:
-    def __init__(self, id, worker, image, settings, *, frame_content=(0, 0, 512, 512)):
+    def __init__(
+        self, id, worker, image, settings, *, frame_content=(0, 0, 512, 512), background=None
+    ):
         self.id, self.worker, self.image, self.settings = id, worker, image, settings
         self.frame_content = frame_content
         self.publisher_token = secrets.token_urlsafe(32)
@@ -50,7 +52,9 @@ class Session:
         self.history = np.zeros(worker.info["cache_samples"], dtype=np.float32)
         self.downsampler = av.AudioResampler(format="flt", layout="mono", rate=16000)
         self.model_pending = np.empty(0, dtype=np.float32)
-        self.timeline = Timeline(np.asarray(Image.open(image).convert("RGB").resize((512, 512))))
+        self.timeline = Timeline(
+            np.asarray(Image.open(image).convert("RGB").resize((512, 512))), background
+        )
         self.task = None
         self.close_lock = asyncio.Lock()
         self.metrics = {
@@ -305,3 +309,6 @@ class Session:
             await self.native_sink.close()
         if self.socket_sink:
             await self.socket_sink.close()
+
+        if self.timeline.background:
+            await asyncio.to_thread(self.timeline.background.close)
