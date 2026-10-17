@@ -15,7 +15,7 @@
 
 **Add a live face to any voice AI agent in five lines.** Turn a portrait and generated audio into synchronized video and speech on your own GPU.
 
-[![try demo](https://img.shields.io/badge/try%20demo-2EA44F?style=for-the-badge)](https://dashboard.openspline.dev/explore)
+[Try Online (no GPU or installation needed)](https://dashboard.openspline.dev/explore)
 
 
 - **Bring your agent.** Keep your prompts, tools, microphone, and voice provider.
@@ -23,12 +23,40 @@
 - **Ready to display.** Built-in viewer, React component, and web component.
 - **Self-hosted.** One active session per GPU worker; add GPUs for concurrency.
 
-[Cloud](#openspline-cloud) · [Quick start](#quick-start) · [Connectors](#connectors) · [Configuration](#configuration) · [Node SDK](#node-sdk) · [Frontend](#frontend) · [GPU workers](#gpu-workers)
+[Quick start](#quick-start) · [Connectors](#connectors) · [Configuration](#configuration) · [Node SDK](#node-sdk) · [Frontend](#frontend) · [GPU workers](#gpu-workers)
 
 
-> Don't have a GPU? 
-> [Openspline Cloud](https://openspline.dev) lets you create, share, and embed talking avatars from your browser, no hardware or setup required. Create an avatar with any portrait, voice, and AI personality, get a shareable link, and embed it anywhere. 
+## Examples
 
+Avatars created with [OpenSpline Cloud](experiments/openspline_cloud). Click a preview or **Try online** to open the live avatar.
+
+<!-- GitHub strips iframe/script embeds. These looping GIFs come from the public Explore preview videos. -->
+<table>
+  <tr>
+    <th>Nikola Tesla</th>
+    <th>Meera</th>
+    <th>Lisa</th>
+  </tr>
+  <tr>
+    <td align="center"><a href="https://dashboard.openspline.dev/nikola-tesla1"><img src="media/examples/nikola-tesla.gif" alt="Nikola Tesla talking avatar preview" width="240" height="240"></a><br><a href="https://dashboard.openspline.dev/nikola-tesla1">Try online</a></td>
+    <td align="center"><a href="https://dashboard.openspline.dev/meera"><img src="media/examples/meera.gif" alt="Meera talking avatar preview" width="240" height="240"></a><br><a href="https://dashboard.openspline.dev/meera">Try online</a></td>
+    <td align="center"><a href="https://dashboard.openspline.dev/hemant-virtual-testing2"><img src="media/examples/lisa.gif" alt="Lisa talking avatar preview" width="240" height="240"></a><br><a href="https://dashboard.openspline.dev/hemant-virtual-testing2">Try online</a></td>
+  </tr>
+  <tr>
+    <th>Acharya</th>
+    <th>Elon Musk</th>
+    <th>Ye</th>
+  </tr>
+  <tr>
+    <td align="center"><a href="https://dashboard.openspline.dev/acharya-ji"><img src="media/examples/acharya.gif" alt="Acharya talking avatar preview" width="240" height="240"></a><br><a href="https://dashboard.openspline.dev/acharya-ji">Try online</a></td>
+    <td align="center"><a href="https://dashboard.openspline.dev/elon"><img src="media/examples/elon-musk.gif" alt="Elon Musk talking avatar preview" width="240" height="240"></a><br><a href="https://dashboard.openspline.dev/elon">Try online</a></td>
+    <td align="center"><a href="https://dashboard.openspline.dev/ye-west"><img src="media/examples/ye.gif" alt="Ye talking avatar preview" width="240" height="240"></a><br><a href="https://dashboard.openspline.dev/ye-west">Try online</a></td>
+  </tr>
+</table>
+
+## Openspline Cloud
+
+Create, share, and embed your own avatar at [openspline.dev](https://openspline.dev), or explore the [Cloud app source and embed examples](experiments/openspline_cloud/README.md#use-in-code).
 
 ## Quick start
 
