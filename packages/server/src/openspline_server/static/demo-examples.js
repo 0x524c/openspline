@@ -76,12 +76,35 @@ async def connect_avatar(live_session):
   },
 };
 
+// Tokenize before creating spans so example text is always inserted as text.
+export function highlightPython(code, source) {
+  const tokens = /#[^\n]*|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|\b(?:async|await|def|from|import|with|as|for|in|try|finally|pass|if|while|True|False|None|return)\b|\b\d+(?:\.\d+)?\b|\b[A-Za-z_]\w*(?=\s*\()/g;
+  const fragment = document.createDocumentFragment();
+  let offset = 0;
+  for (const match of source.matchAll(tokens)) {
+    fragment.append(source.slice(offset, match.index));
+    const token = document.createElement('span');
+    const value = match[0];
+    const kind = value.startsWith('#') ? 'comment'
+      : /^["']/.test(value) ? 'string'
+      : /^\d/.test(value) ? 'number'
+      : /^\w+$/.test(value) && /^\s*\(/.test(source.slice(match.index + value.length)) ? 'function'
+      : 'keyword';
+    token.className = `syntax-${kind}`;
+    token.textContent = value;
+    fragment.append(token);
+    offset = match.index + value.length;
+  }
+  fragment.append(source.slice(offset));
+  code.replaceChildren(fragment);
+}
+
 export function setupDemoExamples(source, title, description, code, link, copy, status) {
   function render() {
     const example = examples[source.value] ?? examples.file;
     title.textContent = example.title;
     description.textContent = example.description;
-    code.textContent = example.code;
+    highlightPython(code, example.code);
     link.href = `https://github.com/openspline/openspline/blob/main/examples/python/${example.file}`;
     status.textContent = '';
   }

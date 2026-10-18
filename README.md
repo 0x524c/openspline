@@ -78,10 +78,6 @@ sh ~/.local/share/openspline/run.sh
 
 Open [http://localhost:7860](http://localhost:7860) to access the demo.
 
-Choose **OpenAI Realtime** or **Gemini Live** and enter your API key in the demo. Keys entered there stay in memory for the current page and override `OPENAI_API_KEY` or `GEMINI_API_KEY` from the server's `.env`. If a saved key is available, the field shows a masked placeholder; leave it blank to use that key. **Audio file** mode needs no API key.
-
-For **ElevenLabs Agents**, enter your agent ID. Public agents need no API key; private agents need an ElevenLabs API key with access to the agent. You can also set `ELEVENLABS_AGENT_ID` and `ELEVENLABS_API_KEY` in the server's `.env`; values entered in the demo override those defaults for the current session and are not saved.
-
 ### Python SDK
 
 Install the client package where your agent runs:

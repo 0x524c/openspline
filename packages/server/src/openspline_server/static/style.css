@@ -54,7 +54,14 @@ fieldset:disabled .gpu-option { cursor: default; }
 h2 { font-size: 15px; font-weight: 600; }
 #copy-example { padding: 5px 9px; font-size: 12px; }
 #example-description { margin: 10px 0 16px; }
-pre { margin: 0; padding: 20px; overflow-x: auto; background: #f6f6f7; border: 1px solid var(--line); font: 12px/1.8 ui-monospace, SFMono-Regular, Consolas, monospace; tab-size: 4; }
+pre { margin: 0; padding: 20px; overflow-x: auto; color-scheme: dark; color: #e6edf3; background: #0d1117; border: 1px solid #30363d; border-radius: 6px; font: 12px/1.8 ui-monospace, SFMono-Regular, Consolas, monospace; tab-size: 4; }
+pre code { font: inherit; }
+.syntax-keyword { color: #ff7b72; }
+.syntax-string { color: #a5d6ff; }
+.syntax-comment { color: #9da7b3; }
+.syntax-number { color: #79c0ff; }
+.syntax-function { color: #d2a8ff; }
+pre ::selection { background: #264f78; }
 .example-footer { margin-top: 10px; color: var(--muted); font-size: 12px; }
 #copy-status { margin-top: 8px; }
 :where(button, a, input, select, pre):focus-visible { outline: 2px solid #536a9a; outline-offset: 3px; }

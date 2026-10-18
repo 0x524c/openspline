@@ -14,16 +14,17 @@ from openspline_server.install_message import print_install_message
 from rich.console import Console
 
 
-def test_install_message_shows_launch_and_optional_keys():
+def test_install_message_shows_demo_launch():
     install = Path("/tmp/install with spaces")
     plain = StringIO()
     print_install_message(install, Console(file=plain, force_terminal=False, width=120))
     output = plain.getvalue()
     assert "sh '/tmp/install with spaces/run.sh'" in output
-    assert "/tmp/install with spaces/.env" in output
-    assert "OPENAI_API_KEY=your_openai_key" in output
-    assert "GEMINI_API_KEY=your_gemini_key" in output
-    assert "Audio file mode needs no key" in output
+    assert "http://localhost:7860" in output
+    assert "Realtime conversation" not in output
+    assert "API key" not in output
+    assert "API_KEY" not in output
+    assert ".env" not in output
     assert "\x1b[" not in output
 
     colored = StringIO()
